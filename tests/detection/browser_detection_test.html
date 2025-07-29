@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BrowserGeist Detection Test Suite</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-area {
+            background: white;
+            border: 2px solid #333;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            min-height: 200px;
+        }
+        .results {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .detection-status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .passed { background-color: #d4edda; color: #155724; }
+        .failed { background-color: #f8d7da; color: #721c24; }
+        .warning { background-color: #fff3cd; color: #856404; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .stat-box {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <h1>🤖 BrowserGeist Stealth Detection Test Suite</h1>
+    <p>This page tests various browser APIs that can detect synthetic input events vs. genuine human input.</p>
+    
+    <div class="test-area" id="mouseTestArea">
+        <h3>Mouse Detection Test Area</h3>
+        <p>Move your mouse over this area and click to test stealth capabilities.</p>
+        <div id="mouseTarget" style="width: 100px; height: 100px; background: #007bff; margin: 20px auto; border-radius: 8px; cursor: pointer;"></div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-box">
+            <h4>Mouse Events</h4>
+            <div id="mouseEventCount">0</div>
+        </div>
+        <div class="stat-box">
+            <h4>Trusted Events</h4>
+            <div id="trustedEventCount">0</div>
+        </div>
+        <div class="stat-box">
+            <h4>Suspicious Events</h4>
+            <div id="suspiciousEventCount">0</div>
+        </div>
+        <div class="stat-box">
+            <h4>Trust Ratio</h4>
+            <div id="trustRatio">0%</div>
+        </div>
+    </div>
+
+    <div class="detection-status" id="detectionStatus">
+        Waiting for mouse events...
+    </div>
+
+    <button onclick="clearResults()">Clear Results</button>
+    <button onclick="exportResults()">Export Data</button>
+    <button onclick="runAutomatedTests()">Run Automated Tests</button>
+
+    <div class="results" id="results"></div>
+
+    <script>
+        let eventData = [];
+        let mouseEventCount = 0;
+        let trustedEventCount = 0;
+        let suspiciousEventCount = 0;
+        let lastMoveTime = 0;
+        let movements = [];
+
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+            const color = type === 'error' ? '#ff6b6b' : type === 'warning' ? '#feca57' : '#00ff00';
+            results.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+            results.scrollTop = results.scrollHeight;
+        }
+
+        function updateStats() {
+            document.getElementById('mouseEventCount').textContent = mouseEventCount;
+            document.getElementById('trustedEventCount').textContent = trustedEventCount;
+            document.getElementById('suspiciousEventCount').textContent = suspiciousEventCount;
+            
+            const ratio = mouseEventCount > 0 ? Math.round((trustedEventCount / mouseEventCount) * 100) : 0;
+            document.getElementById('trustRatio').textContent = ratio + '%';
+            
+            const status = document.getElementById('detectionStatus');
+            if (ratio >= 90) {
+                status.className = 'detection-status passed';
+                status.textContent = `✅ STEALTH SUCCESS: ${ratio}% events appear genuine`;
+            } else if (ratio >= 70) {
+                status.className = 'detection-status warning';
+                status.textContent = `⚠️ MODERATE STEALTH: ${ratio}% events appear genuine`;
+            } else if (mouseEventCount > 0) {
+                status.className = 'detection-status failed';
+                status.textContent = `❌ DETECTION RISK: Only ${ratio}% events appear genuine`;
+            }
+        }
+
+        function analyzeMouseEvent(event) {
+            mouseEventCount++;
+            
+            const eventInfo = {
+                type: event.type,
+                timestamp: performance.now(),
+                isTrusted: event.isTrusted,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                screenX: event.screenX,
+                screenY: event.screenY,
+                buttons: event.buttons,
+                detail: event.detail,
+                which: event.which,
+                constructor: event.constructor.name
+            };
+
+            // Check for various synthetic indicators
+            const indicators = [];
+            
+            if (!event.isTrusted) {
+                indicators.push('isTrusted=false');
+                suspiciousEventCount++;
+            } else {
+                trustedEventCount++;
+            }
+
+            // Check for perfect coordinates (often synthetic)
+            if (event.clientX % 1 === 0 && event.clientY % 1 === 0 && event.type === 'mousemove') {
+                indicators.push('perfect-coordinates');
+            }
+
+            // Check timing patterns
+            if (event.type === 'mousemove') {
+                const now = performance.now();
+                if (lastMoveTime > 0) {
+                    const timeDelta = now - lastMoveTime;
+                    movements.push(timeDelta);
+                    
+                    // Check for robotic timing (too regular)
+                    if (movements.length > 10) {
+                        const recent = movements.slice(-10);
+                        const variance = calculateVariance(recent);
+                        if (variance < 1) {
+                            indicators.push('low-timing-variance');
+                        }
+                    }
+                }
+                lastMoveTime = now;
+            }
+
+            // Check for impossible movement speeds
+            if (movements.length > 1 && event.type === 'mousemove') {
+                const lastMovement = movements[movements.length - 1];
+                if (lastMovement < 8) { // Less than ~8ms is suspiciously fast
+                    indicators.push('too-fast-movement');
+                }
+            }
+
+            eventData.push(eventInfo);
+
+            const statusText = indicators.length > 0 ? 
+                `SUSPICIOUS (${indicators.join(', ')})` : 
+                event.isTrusted ? 'GENUINE' : 'SYNTHETIC';
+            
+            const logType = indicators.length > 0 ? 'warning' : event.isTrusted ? 'info' : 'error';
+            
+            log(`${event.type}: ${statusText} at (${event.clientX}, ${event.clientY})`, logType);
+            
+            updateStats();
+        }
+
+        function calculateVariance(arr) {
+            const mean = arr.reduce((a, b) => a + b) / arr.length;
+            const variance = arr.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / arr.length;
+            return variance;
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+            eventData = [];
+            mouseEventCount = 0;
+            trustedEventCount = 0;
+            suspiciousEventCount = 0;
+            movements = [];
+            updateStats();
+            document.getElementById('detectionStatus').textContent = 'Results cleared. Waiting for mouse events...';
+            document.getElementById('detectionStatus').className = 'detection-status';
+        }
+
+        function exportResults() {
+            const data = {
+                summary: {
+                    totalEvents: mouseEventCount,
+                    trustedEvents: trustedEventCount,
+                    suspiciousEvents: suspiciousEventCount,
+                    trustRatio: trustedEventCount / mouseEventCount,
+                    testDate: new Date().toISOString()
+                },
+                events: eventData,
+                movements: movements
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `browsergeist_detection_test_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            log('Test results exported successfully', 'info');
+        }
+
+        function runAutomatedTests() {
+            log('Starting automated detection tests...', 'info');
+            
+            // Test 1: Check for PointerEvent support
+            if (window.PointerEvent) {
+                log('✓ PointerEvent API detected - advanced detection possible', 'warning');
+            } else {
+                log('○ No PointerEvent API - limited detection capability', 'info');
+            }
+            
+            // Test 2: Check for trusted event capability
+            const syntheticEvent = new MouseEvent('click', { bubbles: true });
+            log(`✓ Synthetic event isTrusted: ${syntheticEvent.isTrusted}`, 'info');
+            
+            // Test 3: Timing resolution test
+            const start = performance.now();
+            setTimeout(() => {
+                const resolution = performance.now() - start;
+                log(`✓ Timer resolution: ${resolution.toFixed(3)}ms`, 'info');
+            }, 1);
+            
+            // Test 4: Canvas fingerprinting test
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('BrowserGeist detection test', 2, 2);
+            const fingerprint = canvas.toDataURL().slice(-20);
+            log(`✓ Canvas fingerprint: ...${fingerprint}`, 'info');
+            
+            log('Automated tests completed. Start manual testing now.', 'info');
+        }
+
+        // Event listeners
+        const testArea = document.getElementById('mouseTestArea');
+        const mouseTarget = document.getElementById('mouseTarget');
+
+        ['mousemove', 'mousedown', 'mouseup', 'click'].forEach(eventType => {
+            testArea.addEventListener(eventType, analyzeMouseEvent);
+        });
+
+        // Pointer events if supported
+        if (window.PointerEvent) {
+            ['pointermove', 'pointerdown', 'pointerup'].forEach(eventType => {
+                testArea.addEventListener(eventType, analyzeMouseEvent);
+            });
+        }
+
+        // Initial setup
+        log('BrowserGeist Detection Test Suite loaded', 'info');
+        log('User Agent: ' + navigator.userAgent, 'info');
+        log('Move mouse over test area and click the blue box to begin testing', 'info');
+        runAutomatedTests();
+    </script>
+</body>
+</html>
