@@ -23,11 +23,16 @@ from contextlib import contextmanager
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'vision'))
 from template_matcher import TemplateMatcher, MatchResult, VisionCache
 
-# Import CAPTCHA solver
-from python_sdk.captcha_solver import CaptchaSolver, CaptchaSolveMethod, CaptchaSolution
-
-# Import personas
-from python_sdk.user_personas import UserPersona, get_persona, list_personas, PERSONAS
+# Import CAPTCHA solver and wait system
+try:
+    from .captcha_solver import CaptchaSolver, CaptchaSolveMethod, CaptchaSolution
+    from .user_personas import UserPersona, get_persona, list_personas, PERSONAS
+    from .wait_conditions import WaitSystem, ExpectationSystem, WaitTimeoutError
+except ImportError:
+    # Fallback for when module is imported directly
+    from captcha_solver import CaptchaSolver, CaptchaSolveMethod, CaptchaSolution
+    from user_personas import UserPersona, get_persona, list_personas, PERSONAS
+    from wait_conditions import WaitSystem, ExpectationSystem, WaitTimeoutError
 
 
 class BrowserGeistError(Exception):
@@ -133,6 +138,10 @@ class HumanMouse:
         
         # Logging
         self.logger = logging.getLogger("browsergeist")
+        
+        # Initialize wait system and expectations
+        self.wait = WaitSystem(self)
+        self.expect = ExpectationSystem(self.wait)
         
         self._connect()
     
@@ -423,9 +432,9 @@ class HumanMouse:
             "delay_profile": delay_profile
         }
         
-        response = self._send_command(command)
-        if not response.get("success"):
-            raise RuntimeError(f"Type failed: {response.get('error')}")
+        result = self._send_command(command)
+        if not result.success:
+            raise CommandError(f"Type failed: {result.error_message}", result.error_code)
     
     def scroll(self, dx: int = 0, dy: int = 0, smooth: bool = True):
         """Scroll with human-like motion"""
@@ -436,9 +445,9 @@ class HumanMouse:
             "smooth": smooth
         }
         
-        response = self._send_command(command)
-        if not response.get("success"):
-            raise RuntimeError(f"Scroll failed: {response.get('error')}")
+        result = self._send_command(command)
+        if not result.success:
+            raise CommandError(f"Scroll failed: {result.error_message}", result.error_code)
     
     def _find_target_image(self, image_path: str, 
                           confidence: float = 0.8) -> Optional[Tuple[int, int]]:
@@ -618,7 +627,8 @@ class HumanMouse:
     
     def click_text(self, text: str, confidence: float = 0.8, 
                    button: str = "left", duration: float = 0.05,
-                   use_persona: bool = True, use_accessibility: bool = True) -> CommandResult:
+                   use_persona: bool = True, use_accessibility: bool = True,
+                   fuzzy_threshold: float = 0.6) -> CommandResult:
         """Click on text found via OCR or Accessibility API
         
         Args:
@@ -628,6 +638,7 @@ class HumanMouse:
             duration: Click duration in seconds
             use_persona: Whether to use persona for motion adaptation
             use_accessibility: Whether to try accessibility API first
+            fuzzy_threshold: Fuzzy matching threshold for OCR (0.0-1.0)
             
         Returns:
             CommandResult with success status and details
@@ -654,8 +665,8 @@ class HumanMouse:
             if not screenshot:
                 raise VisionError("Failed to capture screenshot", "SCREENSHOT_FAILED")
             
-            # Use OCR to find text
-            ocr_result = self.vision.find_text(screenshot, text, confidence)
+            # Use OCR to find text with fuzzy matching
+            ocr_result = self.vision.find_text(screenshot, text, confidence, fuzzy_threshold)
             if ocr_result:
                 target_coords = ocr_result.center
                 method_used = "ocr"
@@ -885,6 +896,264 @@ class HumanMouse:
             "session_duration": duration,
             "commands_per_second": self._session_stats["commands_executed"] / max(duration, 1)
         }
+    
+    # Safe interaction methods with automatic waiting
+    
+    def safe_click_text(self, text: str, 
+                       timeout: Optional[float] = None,
+                       confidence: float = 0.8,
+                       button: str = "left",
+                       duration: float = 0.05,
+                       use_persona: bool = True,
+                       use_accessibility: bool = True) -> CommandResult:
+        """Safely click text after waiting for it to be visible
+        
+        Args:
+            text: Text to find and click
+            timeout: Maximum time to wait for element (uses default if None)
+            confidence: Text recognition confidence threshold
+            button: Mouse button to click
+            duration: Click duration
+            use_persona: Whether to use persona for motion adaptation
+            use_accessibility: Whether to try accessibility API first
+            
+        Returns:
+            CommandResult with success status and details
+            
+        Raises:
+            WaitTimeoutError: If element is not found within timeout
+        """
+        # Wait for element to be visible
+        coords = self.expect.element_to_be_visible(text, timeout, confidence, use_accessibility)
+        
+        # Move and click
+        self.move_to(coords, use_persona=use_persona)
+        click_result = self.click(button, duration)
+        click_result.details["text"] = text
+        click_result.details["wait_used"] = True
+        return click_result
+    
+    def safe_click_image(self, image_path: str,
+                        timeout: Optional[float] = None,
+                        confidence: float = 0.8,
+                        button: str = "left", 
+                        duration: float = 0.05,
+                        use_persona: bool = True) -> CommandResult:
+        """Safely click image after waiting for it to be visible
+        
+        Args:
+            image_path: Path to template image
+            timeout: Maximum time to wait for element
+            confidence: Template matching confidence threshold
+            button: Mouse button to click
+            duration: Click duration
+            use_persona: Whether to use persona for motion adaptation
+            
+        Returns:
+            CommandResult with success status and details
+            
+        Raises:
+            WaitTimeoutError: If element is not found within timeout
+        """
+        # Wait for image to be visible
+        result = self.wait.for_image(image_path, timeout, confidence)
+        if not result.success:
+            if result.timeout:
+                raise WaitTimeoutError(f"Image '{image_path}' to be visible",
+                                     timeout or self.wait.default_timeout,
+                                     result.attempts)
+            else:
+                raise VisionError(f"Failed to find image '{image_path}': {result.error}")
+        
+        # Move and click
+        self.move_to(result.value.center, use_persona=use_persona)
+        click_result = self.click(button, duration)
+        click_result.details["image_path"] = image_path
+        click_result.details["wait_used"] = True
+        return click_result
+    
+    def click_near_text(self, target_text: str, nearby_text: str,
+                       confidence: float = 0.8, max_distance: float = 200.0,
+                       button: str = "left", duration: float = 0.05,
+                       use_persona: bool = True) -> CommandResult:
+        """Click on element near specific text (context-aware targeting)
+        
+        Args:
+            target_text: Primary text to look for
+            nearby_text: Text that should be near the target
+            confidence: OCR confidence threshold
+            max_distance: Maximum pixel distance between target and nearby text
+            button: Mouse button to click
+            duration: Click duration
+            use_persona: Whether to use persona for motion adaptation
+            
+        Returns:
+            CommandResult with success status and details
+        """
+        # Take screenshot
+        screenshot = self._take_screenshot()
+        if not screenshot:
+            raise VisionError("Failed to capture screenshot", "SCREENSHOT_FAILED")
+        
+        # Find all text occurrences using OCR
+        try:
+            import pytesseract
+            
+            # Preprocess image for better OCR
+            gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY) if len(screenshot.shape) == 3 else screenshot
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Get all text data with positions
+            data = pytesseract.image_to_data(thresh, output_type=pytesseract.Output.DICT)
+            
+            # Find target and nearby text positions
+            target_positions = []
+            nearby_positions = []
+            
+            for i, text in enumerate(data['text']):
+                if not text or not text.strip():
+                    continue
+                    
+                text_clean = text.strip().lower()
+                ocr_confidence = float(data['conf'][i]) / 100.0
+                
+                if ocr_confidence < confidence:
+                    continue
+                
+                # Check for target text
+                if target_text.lower() in text_clean:
+                    x = data['left'][i] + data['width'][i] // 2
+                    y = data['top'][i] + data['height'][i] // 2
+                    target_positions.append((x, y, text, ocr_confidence))
+                
+                # Check for nearby text
+                if nearby_text.lower() in text_clean:
+                    x = data['left'][i] + data['width'][i] // 2
+                    y = data['top'][i] + data['height'][i] // 2
+                    nearby_positions.append((x, y, text, ocr_confidence))
+            
+            # Find best target based on proximity to nearby text
+            best_target = None
+            best_score = 0.0
+            
+            for target_x, target_y, target_found, target_conf in target_positions:
+                for nearby_x, nearby_y, nearby_found, nearby_conf in nearby_positions:
+                    # Calculate distance
+                    distance = ((target_x - nearby_x) ** 2 + (target_y - nearby_y) ** 2) ** 0.5
+                    
+                    if distance <= max_distance:
+                        # Score based on confidence and proximity
+                        proximity_score = 1.0 - (distance / max_distance)
+                        combined_score = (target_conf + nearby_conf) / 2.0 * proximity_score
+                        
+                        if combined_score > best_score:
+                            best_score = combined_score
+                            best_target = (target_x, target_y)
+            
+            if best_target:
+                # Move to target and click
+                self.move_to(best_target, use_persona=use_persona)
+                click_result = self.click(button, duration)
+                click_result.details["targeting_method"] = "context_aware"
+                click_result.details["context_score"] = best_score
+                return click_result
+            else:
+                raise VisionError(f"Target '{target_text}' not found near '{nearby_text}'", 
+                                "CONTEXT_NOT_FOUND", 
+                                {"target_text": target_text, "nearby_text": nearby_text, "max_distance": max_distance})
+                
+        except ImportError:
+            raise VisionError("pytesseract not installed", "OCR_UNAVAILABLE")
+        except Exception as e:
+            raise VisionError(f"Context-aware targeting failed: {e}", "CONTEXT_ERROR")
+
+    def safe_type_in_field(self, field_text: str, content: str,
+                          timeout: Optional[float] = None,
+                          confidence: float = 0.8,
+                          delay_profile: str = "average",
+                          clear_field: bool = True,
+                          use_persona: bool = True,
+                          use_accessibility: bool = True) -> CommandResult:
+        """Safely type in field after waiting for it to be visible
+        
+        Args:
+            field_text: Text label of the field to find
+            content: Text to type
+            timeout: Maximum time to wait for field
+            confidence: Text recognition confidence threshold
+            delay_profile: Typing speed profile
+            clear_field: Whether to clear field before typing
+            use_persona: Whether to use persona for motion adaptation
+            use_accessibility: Whether to try accessibility API first
+            
+        Returns:
+            CommandResult with success status and details
+            
+        Raises:
+            WaitTimeoutError: If field is not found within timeout
+        """
+        # Wait for field label to be visible
+        coords = self.expect.element_to_be_visible(field_text, timeout, confidence, use_accessibility)
+        
+        # Find input field near the label
+        screenshot = self._take_screenshot()
+        if not screenshot:
+            raise VisionError("Failed to capture screenshot", "SCREENSHOT_FAILED")
+        
+        # For now, use simple heuristic to find input field
+        # TODO: Implement more sophisticated field detection
+        input_field = self._find_input_field_near(screenshot, type('MockResult', (), {
+            'center': coords,
+            'center_x': coords[0],
+            'center_y': coords[1], 
+            'width': 100,
+            'height': 20
+        })())
+        
+        if not input_field:
+            # Try clicking on the label itself as fallback
+            input_field = coords
+        
+        # Click on input field
+        self.move_to(input_field, use_persona=use_persona)
+        self.click()
+        
+        # Clear field if requested
+        if clear_field:
+            self._send_command({"action": "key_combination", "keys": ["cmd", "a"]})
+            time.sleep(0.1)
+        
+        # Type content
+        type_result = self.type_text(content, delay_profile, use_persona)
+        type_result.details["field_text"] = field_text
+        type_result.details["wait_used"] = True
+        return type_result
+    
+    def wait_for_page_load(self, timeout: Optional[float] = None,
+                          stability_duration: float = 1.0,
+                          similarity_threshold: float = 0.95) -> bool:
+        """Wait for page to finish loading (screen to be stable)
+        
+        Args:
+            timeout: Maximum time to wait
+            stability_duration: How long screen must be stable
+            similarity_threshold: Similarity threshold for stability detection
+            
+        Returns:
+            True if page is stable, False if timeout
+            
+        Raises:
+            WaitTimeoutError: If page doesn't stabilize within timeout
+        """
+        result = self.wait.for_stable_screen(timeout, stability_duration, similarity_threshold)
+        if not result.success:
+            if result.timeout:
+                raise WaitTimeoutError("Page to finish loading",
+                                     timeout or self.wait.default_timeout,
+                                     result.attempts)
+            else:
+                raise Exception(f"Page stability check failed: {result.error}")
+        return True
     
     def close(self):
         """Close connection to daemon"""

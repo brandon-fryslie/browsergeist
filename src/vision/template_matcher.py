@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 import subprocess
 import re
+import difflib
 
 
 @dataclass
@@ -398,8 +399,16 @@ class TemplateMatcher:
     def find_text(self, 
                   screenshot: np.ndarray,
                   target_text: str,
-                  confidence: float = 0.8) -> Optional[MatchResult]:
-        """Find text on screen using OCR (requires pytesseract)"""
+                  confidence: float = 0.8,
+                  fuzzy_threshold: float = 0.6) -> Optional[MatchResult]:
+        """Find text on screen using OCR with fuzzy matching (requires pytesseract)
+        
+        Args:
+            screenshot: Screenshot image array
+            target_text: Text to search for
+            confidence: OCR confidence threshold (0.0-1.0)
+            fuzzy_threshold: Fuzzy matching threshold (0.0-1.0)
+        """
         
         try:
             import pytesseract
@@ -413,20 +422,58 @@ class TemplateMatcher:
             # Get text data with bounding boxes
             data = pytesseract.image_to_data(thresh, output_type=pytesseract.Output.DICT)
             
-            # Search for target text
+            target_lower = target_text.lower().strip()
+            best_match = None
+            best_similarity = 0.0
+            
+            # Search for target text with fuzzy matching
             for i, text in enumerate(data['text']):
-                if target_text.lower() in text.lower() and int(data['conf'][i]) > confidence * 100:
-                    x = data['left'][i]
-                    y = data['top'][i]
-                    w = data['width'][i]
-                    h = data['height'][i]
+                if not text or not text.strip():
+                    continue
                     
-                    return MatchResult(
-                        x=x, y=y, width=w, height=h,
-                        confidence=float(data['conf'][i]) / 100.0,
-                        center_x=x + w // 2, center_y=y + h // 2,
-                        method="ocr"
-                    )
+                text_clean = text.strip().lower()
+                ocr_confidence = float(data['conf'][i]) / 100.0
+                
+                # Skip if OCR confidence too low
+                if ocr_confidence < confidence:
+                    continue
+                
+                # Exact substring match (highest priority)
+                if target_lower in text_clean:
+                    similarity = 1.0
+                elif text_clean in target_lower:
+                    similarity = 0.95
+                else:
+                    # Fuzzy matching using sequence matcher
+                    similarity = difflib.SequenceMatcher(None, target_lower, text_clean).ratio()
+                
+                # Check if this is the best match so far
+                if similarity >= fuzzy_threshold and similarity > best_similarity:
+                    best_similarity = similarity
+                    best_match = {
+                        'index': i,
+                        'similarity': similarity,
+                        'ocr_confidence': ocr_confidence,
+                        'text': text
+                    }
+            
+            # Return best match if found
+            if best_match:
+                i = best_match['index']
+                x = data['left'][i]
+                y = data['top'][i]
+                w = data['width'][i]
+                h = data['height'][i]
+                
+                # Combine fuzzy similarity and OCR confidence for final confidence
+                final_confidence = (best_match['similarity'] * 0.7 + best_match['ocr_confidence'] * 0.3)
+                
+                return MatchResult(
+                    x=x, y=y, width=w, height=h,
+                    confidence=final_confidence,
+                    center_x=x + w // 2, center_y=y + h // 2,
+                    method=f"ocr_fuzzy({best_match['similarity']:.2f})"
+                )
         
         except ImportError:
             print("Warning: pytesseract not installed, text search unavailable")

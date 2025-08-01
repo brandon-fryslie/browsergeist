@@ -1,29 +1,29 @@
-# Priority 2.4: Distribution & Packaging
+# Priority 1.4: Natural Element Targeting API
 
 ## Current Task Status
-**Goal**: Enable professional distribution channels and deployment mechanisms
+**Goal**: Implement system for identifying and accurately clicking on UI elements
 
 ## Tasks to Complete:
-- [ ] PyPI package distribution for Python SDK (compatible with uv)
-- [ ] Homebrew formula for easy installation
-- [ ] Signed .pkg installer for macOS
-- [ ] Automated GitHub Actions CI/CD pipeline
-- [ ] Release management and versioning
-- [ ] Update mechanisms and compatibility checking
+- [ ] Implement smart text targeting: `click_text("Login")`, `click_link("Contact")`
+- [ ] Add form field targeting: `type_in_field("Email", "user@email.com")`
+- [ ] Build pattern-based targeting: `click_button()`, `click_field()`
+- [ ] Integrate macOS Accessibility API for element discovery
+- [ ] Create hybrid targeting combining OCR + accessibility + vision
+- [ ] Add fuzzy matching and confidence-based targeting
+- [ ] Implement context-aware element detection
 
 ## Success Criteria:
-- PyPI package available for `pip install browsergeist`
-- Homebrew installation: `brew install browsergeist`
-- Professional macOS installer with signing
-- Automated release pipeline with testing
-- Version management and update checking
-- Distribution compatibility validation
+- Natural browser element targeting with multiple methods
+- Users can target elements like "click the login button" or "fill the email field"
+- Reliable element detection across different web browsers
+- Fallback strategies when primary targeting fails
+- Production-ready UI element identification system
 
 ## Notes:
-- Enables easy installation and deployment
-- Professional distribution channels
-- Automated testing and release management
-- Foundation for enterprise adoption
+- Critical gap blocking natural browser automation
+- Current API requires exact coordinates or pre-captured images
+- Browser automation requires dynamic element targeting
+- Foundation for usable automation workflows
 
 ---
 

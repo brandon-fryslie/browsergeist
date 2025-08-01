@@ -2,6 +2,35 @@
 
 This directory contains a comprehensive example library demonstrating the full capabilities of the BrowserGeist automation framework.
 
+## 🌟 Featured Example: Facebook Signup Automation
+
+**[`facebook_signup_automation.py`](facebook_signup_automation.py)** - A comprehensive real-world automation example demonstrating:
+
+### 🎯 Complete Workflow
+1. **Launch Safari via Spotlight** (Cmd+Space automation)
+2. **Open Private Window** (Menu navigation)
+3. **Navigate to Facebook.com** (Address bar targeting)
+4. **Start Account Creation** (Button detection)
+5. **Fill Registration Form** (Intelligent field targeting with `admin@vast.wang`)
+
+### 🚀 Advanced Features Showcased
+- **Natural Element Targeting**: Find UI elements by text instead of coordinates
+- **Multi-Method Detection**: Accessibility API + OCR fallback for maximum reliability
+- **Human Behavior Simulation**: Realistic typing patterns and movement
+- **Intelligent Fallbacks**: Multiple candidate approaches for robust automation
+- **System Integration**: Spotlight, menu navigation, keyboard shortcuts
+
+### 💡 Educational Focus
+- **Stops before submission** for safety and compliance
+- **User confirmation required** before running
+- **Comprehensive logging** for learning automation patterns
+- **Error handling examples** for production-ready code
+
+```bash
+# Run the featured example
+./run_example.sh examples/facebook_signup_automation.py
+```
+
 ## 📚 Example Categories
 
 ### 🟢 Basic Examples (Getting Started)
@@ -17,6 +46,7 @@ This directory contains a comprehensive example library demonstrating the full c
 - [`visual_debugging.py`](visual_debugging.py) - Debug vision system and save screenshots
 
 ### 🟠 Real-World Automation Scenarios
+- [`facebook_signup_automation.py`](facebook_signup_automation.py) - **NEW!** Complete browser automation workflow
 - [`web_form_automation.py`](web_form_automation.py) - Complete form filling workflow
 - [`login_automation.py`](login_automation.py) - Secure login with credential handling
 - [`shopping_cart_demo.py`](shopping_cart_demo.py) - E-commerce automation example

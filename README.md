@@ -196,7 +196,11 @@ vision_config = {
 
 ### System Test
 ```bash
-# Run comprehensive demo
+# Run comprehensive demo (with virtual environment)
+./run_example.sh examples/browser_automation_demo.py
+
+# Or manually activate virtual environment first
+source .venv/bin/activate
 python3 examples/browser_automation_demo.py
 
 # Test specific components

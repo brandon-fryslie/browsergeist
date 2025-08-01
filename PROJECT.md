@@ -25,7 +25,12 @@ High-Level Goals:
       •	Optional: Tesseract OCR for dynamic content targeting
       •	Output click targets in absolute screen coordinates
 5.	Scripting Interface:
-      •	Modern Python 3.x API, clean and ergonomic:
+•	Modern Python 3.x API, clean and ergonomic:
+6.	Robust Wait System:
+	•	Comprehensive waiting mechanisms for UI stability and element readiness
+	•	Playwright-inspired API for reliable automation timing
+	•	Built-in assertions with automatic waiting and retries
+	•	Prevention of dangerous actions when UI elements are not ready
 6. CAPTCHA solving via 3 methods: OpenAI API, user notification w/ link to private internal webserver allowing user to solve it directly, 2Captcha api integration
 6. Integration with OpenAI API that allows sending a screenshot (or relevant section of screenshot) to the API along with a prompt.  This screenshot and prompt are designed such that the API will return browsergeist commands that will complete any CAPTCHA in the image
 7. If a CAPTCHA is detected and unable to be completed by OpenAI API, browsergeist sends a notification to the user that includes a link to a small web-server run by browsergeist.  A page on this web server shows the CAPTCHA.  The user can complete the captcha for browsergeist to move to the next part of the automation.  
